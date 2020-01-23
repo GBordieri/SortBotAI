@@ -1,0 +1,319 @@
+----CONSTANTS----
+-- Length, Width, and Height of Bot's area of operations
+LENGTH = 18	
+WIDTH = 8 
+HEIGHT = 4
+MAXDIST = (LENGTH + WIDTH + (HEIGHT*2)) * 2
+-- Important locations
+HOME = {577, 183, 67, 3} --Bot's return location (always at ceiling)
+FUELACCESS = {577,183,66, 1} -- Bot needs to move 1 East to actually access
+ITEMACCESS = {577,183,64, 1} -- Bot needs to move 1 East to actually access
+REFUSE = {560, 184, 64, 3}
+--[[
+MODLOCATIONS holds the coordinates of the access 
+location for each modpack's bottom box(es).
+Keys are modnames, values are lists of lists.
+The innermost lists are X,Z,Y coordinates & facing, the outermost
+lists are the locations of the box(es).
+Facings: North = 0, East = 1, South = 2, West = 3
+--]]
+MODLOCATIONS = {minecraft = {{576,180,64,0},{576,180,66,0},{574,180,64,0},{574,180,66,0},{571,180,64,0},{571,180,66,0},{568,180,64,0},{568,180,66,0}},
+								arsmagica2 = {{565,180,64,0},{565,180,64,0},{562,180,64,0},{562,180,66,0}},
+								ComputerCraft = {{576,187,64,2},{576,187,66,2}},
+								harvestcraft = {{574,187,64,2},{574,187,66,2},{571,187,64,2},{571,187,64,2}},
+								Railcraft = {{568,187,64,2},{568,187,66,2}},
+								TConstruct = {{574,186,64,0},{574,186,66,0}},
+								ImmersiveEngineering = {{574,181,64,2},{574,181,66,2}},
+								Thaumcraft = {{568,181,64,2},{568,181,66,2}},
+								GalacticraftCore = {{568,186,64,0},{568,186,66,0}},
+								GalacticraftMars = {{565,186,64,0},{565,186,66,0}},
+								Botania = {{560,181,64,3}, {560,181,66,3}},
+								TwilightForest = {{560,186,64,3}, {560,186,66,3}},
+								chocolateQuest = {{565,187,64,2},{565,187,66,2}},
+								BiblioCraft = {{571,181,64,2},{571,181,66,2}},
+        CarpentersBlocks = {{571,186,64,0},{571,186,66,0}}
+}
+								
+
+loc = {577, 183, 67, 1}	--Bot's current location (starts at HOME)
+--North === 0, clockwise from there
+
+
+----Functions----
+function GetItemModName(ItemName)
+--[[
+INPUT: str ItemName, the name of the item in form "modpack:itemname"
+RETURNS: str, modpack stripped from ItemName
+--]]
+  i = string.find(ItemName,':')
+  return string.sub(ItemName,1,i-1)
+end 
+
+function GoForward(Dist)
+--[[
+INPUT: int Dist, the intended distance to travel
+RETURNS: int, the actual distance traveled
+--]]
+  local result = 0
+  for i=1, Dist do
+    if turtle.forward() then
+      result = result + 1
+      if loc[4] == 0 then loc[2] = loc[2]-1
+      elseif loc[4] == 1 then loc[1] = loc[1]+1 
+      elseif loc[4] == 2 then loc[2] = loc[2]+1 
+      elseif loc[4] == 3 then loc[1] = loc[1]-1 
+			end
+    else
+      return result
+    end
+  end
+  return result
+end
+
+function GoBackward(Dist)
+--[[
+INPUT: int Dist, the intended distance to travel
+RETURNS: int, the actual distance traveled
+--]]
+  local result = 0
+  for i=1, Dist do
+    if turtle.back() then
+      result = result + 1
+      if loc[4] == 0 then loc[2] = loc[2]+1
+      elseif loc[4] == 1 then loc[1] = loc[1]-1 
+      elseif loc[4] == 2 then loc[2] = loc[2]-1 
+      elseif loc[4] == 3 then loc[1] = loc[1]+1 
+			end
+    else
+      return result
+    end
+  end
+  return result
+end
+
+function GoVertical(Amt, Direction)
+--[[
+INPUT: int Amt, the intended distance to travel
+			 str Direction, "up" or "down"
+RETURNS: int, the actual distance traveled
+--]]
+	local result = 0
+	if Direction == "up" then
+		for i=1, Amt do
+			if turtle.up() then
+				result = result + 1
+				loc[3] = loc[3] + 1
+			else
+				return result
+			end
+		end
+	else
+		for i=1, Amt do
+  		if turtle.down() then
+		  	result = result + 1
+		  	loc[3] = loc[3] - 1
+	  	else
+		  	return result
+		  end
+  end
+	end
+	return result
+end
+
+function ChangeFacing(Direction)
+--[[
+INPUT: int Direction, 0 for North and clockwise from there
+RETURNS: bool, success
+--]]
+	print(string.format("Trying to face %d", Direction))
+	-- We're backwards
+	if (loc[4] + 2) % 4 == Direction then
+		for i=1, 2 do
+			if turtle.turnRight() then
+				loc[4] = (loc[4] + 1) % 4
+			else
+				return false
+			end
+		end
+	-- We need to turn right
+	elseif (loc[4] + 1) % 4 == Direction then
+		if turtle.turnRight() then 
+			loc[4] = Direction 
+		else
+			return false
+		end
+	-- We need to turn left
+	elseif (loc[4] - 1) % 4 == Direction then
+		if turtle.turnLeft() then
+			loc[4] = Direction
+		else
+			return false
+		end
+	end
+	return true
+end
+
+function GoTo(Destination)
+--[[
+INPUT: table{int, int, int, int} Destination, the intended end location
+RETURNS: bool, success
+--]]
+	print(string.format("Trying to go to {%d,%d%d}",Destination[1],Destination[2],Destination[3]))
+	-- Move to ceiling if not already there
+	if loc[3] ~= HOME[3] then
+		GoVertical(HOME[3] - loc[3], "up")
+		if loc[3] ~= HOME[3] then return false end
+	end
+	
+	-- Move to X coordinates
+	local delX = Destination[1] - loc[1]
+	if delX > 0 then
+		ChangeFacing(1)
+	elseif delX < 0 then
+		ChangeFacing(3)
+	end
+	GoForward(math.abs(delX))
+	if loc[1] ~= Destination[1] then return false end
+	
+	-- Move to Z coordinates
+	local delZ = Destination[2] - loc[2]
+	if delZ > 0 then
+		ChangeFacing(2)
+	elseif delZ < 0 then
+		ChangeFacing(0)
+	end
+	GoForward(math.abs(delZ))
+	if loc[2] ~= Destination[2] then return false end
+	
+	-- Descend as necessary
+	local delY = Destination[3] - loc[3]
+	GoVertical(math.abs(delY), "down")
+	if loc[3] ~= Destination[3] then return false end
+	
+	return true
+end
+
+function GoToWithFacing(Destination)
+	if GoTo(Destination) == false then return false end
+	return ChangeFacing(Destination[4])
+end
+
+function GetFuel()
+	-- Position self
+	print("I need fuel")
+	GoToWithFacing(FUELACCESS)
+	GoForward(1)
+	-- Get fuel
+	turtle.select(16)
+	local gotFuel = turtle.suck()
+	while gotFuel ~= true do
+		gotFuel = turtle.suck()
+	end
+	-- Consume fuel
+	while (turtle.getFuelLevel() < turtle.getFuelLimit()) and (turtle.getItemCount() > 0) do
+		turtle.refuel(1)
+	end
+	-- Put back remainder
+	if turtle.getItemCount() > 0 then
+		turtle.drop()
+	end
+	GoBackward(1)
+	GoTo(HOME)
+	print("I got the fuel I need")
+end
+
+function GetItems()
+	-- Position self
+	print("I need items to sort")
+	GoToWithFacing(ITEMACCESS)
+	GoForward(1)
+	-- Get items
+	print("Looking for items")
+	turtle.select(1)
+	while turtle.suck() ~= true do end --Wait for item
+	for i=2, 15 do
+		turtle.select(i)
+		if turtle.suck() ~= true then break end
+	end
+	-- Make sure the 16th slot is empty (for emergencies)
+	turtle.select(16)
+	turtle.drop()
+	GoBackward(1)
+	GoTo(HOME)
+	print("I've got the items I need")
+end
+
+function PutItemAway()
+--[[
+	Puts the turtle's selected item away in an apropriate box.
+	Will put the item in a reject box if it can't find a box for the item.
+	RETURNS: bool, success
+--]]
+	local modName = GetItemModName(turtle.getItemDetail().name)
+	print(string.format("Trying to put an item in a %s box", modName))
+	local destinations = MODLOCATIONS[modName]
+	if destinations == nil then destinations = {REFUSE} end	-- Put unrecognized items in REFUSE
+	for i, coords in ipairs(destinations) do
+		-- i is the index, coords is the coordinates of the box
+		print(string.format("Trying box #%d", i))
+		-- Refuel if needed
+		if turtle.getFuelLevel() < MAXDIST * 2 then
+			GetFuel()
+		end
+		-- Try to place item in box
+		if (loc[1] ~= coords[1]) or (loc[2] ~= coords[2]) or (loc[3] ~= coords[3]) or (loc[4] ~= coords[4]) then
+			GoToWithFacing(coords)
+		end
+		if turtle.drop() then return true end
+	end
+	-- Didn't manage to place item, put it in refuse
+	if turtle.getFuelLevel() < MAXDIST * 2 then
+		GetFuel()
+	end
+	print("There was no space")
+	GoToWithFacing(REFUSE)
+	if turtle.drop() then return false end
+	GoVertical(2, "up")
+	if turtle.drop() then return false end
+	turtle.dropDown()
+	return false
+end
+
+function PrintLoc()
+	print(string.format("My current location is {%d, %d, %d}",loc[1],loc[2],loc[3]))
+	print(string.format("My current facing is %d", loc[4]))
+end
+
+function MainLoop()
+	while true do
+	--Refuel if needed
+		if turtle.getFuelLevel() < MAXDIST then
+			GetFuel()
+		end
+		-- Get items to sort
+		GetItems()
+		-- Sort items
+		for i=1, 15 do
+			-- Refuel if we don't have enough fuel to get there and back
+			if turtle.getFuelLevel() < MAXDIST * 2 then
+				GetFuel()
+			end
+			turtle.select(i)
+			if turtle.getItemCount() == 0 then break end -- No more items
+			PutItemAway()
+		end
+	end
+end
+
+
+----Testing----
+function DemoOne()
+	PrintLoc()
+	print("Going to {568, 180, 64}")
+	GoTo({568,180,64})
+	PrintLoc()
+	print(string.format("Going to HOME = {%d, %d, %d}",HOME[1],HOME[2],HOME[3]))
+	GoTo(HOME)
+end
+
+MainLoop()
